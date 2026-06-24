@@ -1,0 +1,45 @@
+// shaders/particles.comp — Simulation de particules GPU 
+#version 430 core 
+ 
+layout(local_size_x = 256) in;  // 256 threads par work group 
+ 
+struct Particle { 
+    vec4 pos;   // xyz=position, w=life 
+    vec4 vel;   // xyz=velocity, w=lifetime 
+}; 
+ 
+layout(std430, binding=0) buffer ParticleBuffer { 
+    Particle particles[]; 
+}; 
+ 
+uniform float u_dt;       // delta time 
+uniform float u_time; 
+ 
+void main() { 
+    uint id = gl_GlobalInvocationID.x; 
+    if (id >= particles.length()) return; 
+ 
+    Particle p = particles[id]; 
+ 
+    // Intégration Euler semi-implicite 
+    vec3 acc = vec3(0, -9.8, 0);  // gravité 
+    p.vel.xyz += acc * u_dt; 
+    p.pos.xyz += p.vel.xyz * u_dt; 
+    p.pos.w   -= u_dt;           // réduire la vie 
+ 
+    // Réinitialiser si mort 
+    if (p.pos.w <= 0.0) { 
+        // reset position, velocity aléatoire via hash 
+        float h = fract(sin(float(id)*127.1 + u_time) * 43758.5); 
+        p.pos = vec4(0, 0, 0, 1.0 + h); 
+        float angle = h * 6.283; 
+        p.vel = vec4(cos(angle), 2.0+h, sin(angle), 0) * (1.0+h); 
+    } 
+ 
+    particles[id] = p; 
+} 
+ 
+// Dispatch : 1M particles / 256 threads = ~3906 work groups 
+// glDispatchCompute((numParticles + 255) / 256, 1, 1); 
+// glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT); 
+// glDrawArrays(GL_POINTS, 0, numParticles);  // rendu 
